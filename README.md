@@ -4,7 +4,7 @@ To compile with `traccc` we first need a shared library. We already have a versi
 
 ```bash
 export DATADIR=/global/cfs/projectdirs/m3443/data/traccc-aaS/data
-export INSTALLDIR=/global/cfs/projectdirs/m3443/data/traccc-aaS/software/prod/ver_03202024_traccc_v0.20.0/install
+export INSTALLDIR=/global/cfs/projectdirs/m3443/data/traccc-aaS/software/dev/install
 export PATH=$INSTALLDIR/bin:$PATH
 ```
 

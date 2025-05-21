@@ -215,10 +215,6 @@ private:
     traccc::device::container_d2h_copy_alg<traccc::track_state_container_types>
         m_copy_track_states;
 
-    // ambiguity resolution
-    traccc::greedy_ambiguity_resolution_algorithm::config_t m_resolution_config;
-    traccc::greedy_ambiguity_resolution_algorithm m_resolution_alg;
-
     // Helper function to create and setup seedfinder_config
     static traccc::seedfinder_config create_and_setup_finder_config() {
         traccc::seedfinder_config cfg;
@@ -315,9 +311,7 @@ public:
             logger->cloneWithSuffix("TrackFindingAlg")),
         m_fitting(m_fitting_config, m_mr, m_copy, m_stream, 
             logger->cloneWithSuffix("TrackFittingAlg")),
-        m_copy_track_states(m_mr, m_copy, logger->cloneWithSuffix("TrackStateD2HCopyAlg")),
-        m_resolution_config(),
-        m_resolution_alg(m_resolution_config)
+        m_copy_track_states(m_mr, m_copy, logger->cloneWithSuffix("TrackStateD2HCopyAlg"))
     {
         // Tell the user what device is being used.
         int device = 0;
@@ -333,12 +327,6 @@ public:
 
     // default destructor
     ~TracccGpuStandalone() = default;
-
-    traccc::edm::spacepoint_collection::host read_spacepoints(
-        std::vector<clusterInfo>& detray_clusters, bool do_strip);
-
-    traccc::measurement_collection_types::host read_measurements(
-        std::vector<clusterInfo>& detray_clusters, bool do_strip);
 
     void initialize();
     
