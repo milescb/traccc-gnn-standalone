@@ -7,8 +7,6 @@
 // CUDA include(s).
 #include <cuda_runtime.h>
 
-// #include "DataHandler.hpp"
-
 // Project include(s).
 #include "traccc/clusterization/clustering_config.hpp"
 #include "traccc/cuda/clusterization/clusterization_algorithm.hpp"

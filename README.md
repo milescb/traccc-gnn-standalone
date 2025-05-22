@@ -9,3 +9,16 @@ export PATH=$INSTALLDIR/bin:$PATH
 ```
 
 Then build like normal. 
+
+## Build traccc
+
+```
+cmake -S traccc/ -B $BUILDDIR \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DTRACCC_BUILD_CUDA=ON \
+    -DTRACCC_BUILD_EXAMPLES=ON \
+    -DTRACCC_USE_ROOT=FALSE \
+    -DCMAKE_INSTALL_PREFIX=$INSTALLDIR
+```
+
+Then build and install. Finally, source `$INSTALLDIR` and add to `$PATH`. 

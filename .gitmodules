@@ -1,0 +1,3 @@
+[submodule "traccc"]
+	path = traccc
+	url = https://github.com/acts-project/traccc.git

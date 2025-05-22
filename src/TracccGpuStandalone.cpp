@@ -74,7 +74,6 @@ traccc::track_state_container_types::host TracccGpuStandalone::run(
 
     // copy track states to host
     traccc::track_state_container_types::host track_states_host = m_copy_track_states(track_states);
-
     return track_states_host;
 }
 
