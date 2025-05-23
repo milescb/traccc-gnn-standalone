@@ -4,6 +4,8 @@
 #include <iostream>
 #include <memory>
 
+#include "TestEvent.hpp"
+
 // CUDA include(s).
 #include <cuda_runtime.h>
 
@@ -75,12 +77,41 @@
 #include "traccc/options/track_propagation.hpp"
 #include "traccc/options/track_seeding.hpp"
 
-struct clusterInfo {
-    std::uint64_t detray_id; 
-    unsigned int local_key;
-    Eigen::Vector3d globalPosition;
-    Eigen::Vector2d localPosition;
-    bool pixel;
+struct InputData {
+    // Spacepoint data
+    std::vector<float> sp_x;
+    std::vector<float> sp_y;
+    std::vector<float> sp_z;
+    std::vector<int> sp_cl1_index;
+    std::vector<int> sp_cl2_index;
+
+    // Cluster data
+    std::vector<float> cl_x;
+    std::vector<float> cl_y;
+    std::vector<float> cl_z;
+    std::vector<float> cl_loc_eta;
+    std::vector<float> cl_loc_phi;
+    std::vector<float> cl_cov_00;
+    std::vector<float> cl_cov_11;
+
+    // Constructor to initialize with TestEvent data
+    InputData() {
+        // Initialize spacepoint vectors
+        sp_x = SPx;
+        sp_y = SPy;
+        sp_z = SPz;
+        sp_cl1_index = SPCL1_index;
+        sp_cl2_index = SPCL2_index;
+
+        // Initialize cluster vectors
+        cl_x = CLx;
+        cl_y = CLy;
+        cl_z = CLz;
+        cl_loc_eta = CLloc_eta;
+        cl_loc_phi = CLloc_phi;
+        cl_cov_00 = cov_00;
+        cl_cov_11 = cov_11;
+    }
 };
 
 // function to set the CUDA device and get the stream
@@ -187,6 +218,8 @@ private:
     traccc::silicon_detector_description::buffer m_device_det_descr;
     /// Host detector
     std::unique_ptr<host_detector_type> m_detector;
+    /// ACTS to detray geometry ID map
+    std::map<traccc::geometry_id, traccc::geometry_id> m_acts_to_detray_id_map;
     /// Buffer holding the detector's payload on the device
     host_detector_type::buffer_type m_device_detector;
     /// View of the detector's payload on the device
@@ -323,12 +356,31 @@ public:
         initialize();
     }
 
-    // default destructor
     ~TracccGpuStandalone() = default;
 
     void initialize();
+
+    traccc::track_state_container_types::host execute(
+        InputData input_data) 
+    {
+        traccc::edm::spacepoint_collection::host spacepoints_per_event{m_host_mr};
+        traccc::measurement_collection_types::host measurements_per_event{&m_host_mr};
+        
+        inputDataToTracccMeasurements(input_data, spacepoints_per_event, measurements_per_event);
+        auto track_states = fitFromGnnOutput(spacepoints_per_event, measurements_per_event);
+
+        return track_states;
+    }
+
+    void inputDataToTracccMeasurements(
+        InputData input_data,
+        traccc::edm::spacepoint_collection::host& spacepoints_per_event,
+        traccc::measurement_collection_types::host& measurements_per_event);
+
+    void makeGNNInput(InputData, traccc::edm::spacepoint_collection::host& spacepoints_per_event,
+        traccc::measurement_collection_types::host& measurements_per_event);
     
-    traccc::track_state_container_types::host run(
+    traccc::track_state_container_types::host fitFromGnnOutput(
         traccc::edm::spacepoint_collection::host spacepoints_per_event,
         traccc::measurement_collection_types::host measurements_per_event);
 };
