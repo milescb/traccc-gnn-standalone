@@ -35,9 +35,6 @@ void TracccGpuStandalone::initialize()
     return;
 }
 
-// input has to be _clusters_ now
-// TODO: could create spacepoints from measurements here
-// TODO: measurement sorting using same strategy: first measurements to spacepoints
 traccc::track_state_container_types::host TracccGpuStandalone::fitFromGnnOutput(
     traccc::edm::spacepoint_collection::host spacepoints_per_event,
     traccc::measurement_collection_types::host measurements_per_event)
@@ -54,6 +51,8 @@ traccc::track_state_container_types::host TracccGpuStandalone::fitFromGnnOutput(
 
     // Seeding and parameter estimation
     // TODO: instead use first three measurments and create seeds from this
+    // TODO But first: sort by radius to then get the first three!
+    // NOTE: this needs to be consistent between measurements and spacepoints
     // Then, pass to the parameter estimation algo
     auto seeds = m_seeding(spacepoints);
     m_stream.synchronize();
