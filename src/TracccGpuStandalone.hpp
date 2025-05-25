@@ -77,42 +77,6 @@
 #include "traccc/options/track_propagation.hpp"
 #include "traccc/options/track_seeding.hpp"
 
-struct InputData {
-    // Spacepoint data
-    std::vector<float> sp_x;
-    std::vector<float> sp_y;
-    std::vector<float> sp_z;
-    std::vector<int> sp_cl1_index;
-    std::vector<int> sp_cl2_index;
-
-    // Cluster data
-    std::vector<float> cl_x;
-    std::vector<float> cl_y;
-    std::vector<float> cl_z;
-    std::vector<float> cl_loc_eta;
-    std::vector<float> cl_loc_phi;
-    std::vector<float> cl_cov_00;
-    std::vector<float> cl_cov_11;
-
-    // Constructor to initialize with TestEvent data
-    InputData() {
-        // Initialize spacepoint vectors
-        sp_x = SPx;
-        sp_y = SPy;
-        sp_z = SPz;
-        sp_cl1_index = SPCL1_index;
-        sp_cl2_index = SPCL2_index;
-
-        // Initialize cluster vectors
-        cl_x = CLx;
-        cl_y = CLy;
-        cl_z = CLz;
-        cl_loc_eta = CLloc_eta;
-        cl_loc_phi = CLloc_phi;
-        cl_cov_00 = cov_00;
-        cl_cov_11 = cov_11;
-    }
-};
 
 // function to set the CUDA device and get the stream
 static traccc::cuda::stream setCudaDeviceAndGetStream(int deviceID)
@@ -166,11 +130,11 @@ private:
     /// Logger 
     std::unique_ptr<const traccc::Logger> logger;
     /// Host memory resource
-    vecmem::host_memory_resource m_host_mr;
+    vecmem::host_memory_resource *m_host_mr;
     /// CUDA stream to use
     traccc::cuda::stream m_stream;
     /// Device memory resource
-    vecmem::cuda::device_memory_resource m_device_mr;
+    vecmem::cuda::device_memory_resource *m_device_mr;
     /// Device caching memory resource
     std::unique_ptr<vecmem::binary_page_memory_resource> m_cached_device_mr;
     /// (Asynchronous) memory copy object
@@ -192,18 +156,7 @@ private:
     traccc::opts::track_propagation m_propagation_opts;
     /// clusterization options
     detray::propagation::config m_propagation_config;
-    /// Configuration for clustering
-    traccc::clustering_config m_clustering_config;
-    /// Configuration for the seed finding
-    traccc::seedfinder_config m_finder_config;
-    /// Configuration for the spacepoint grid formation
-    traccc::spacepoint_grid_config m_grid_config;
-    /// Configuration for the seed filtering
-    traccc::seedfilter_config m_filter_config;
 
-    /// further configuration
-    /// Configuration for the track finding
-    finding_algorithm::config_type m_finding_config;
     /// Configuration for the track fitting
     fitting_algorithm::config_type m_fitting_config;
 
@@ -225,20 +178,9 @@ private:
     /// View of the detector's payload on the device
     host_detector_type::view_type m_device_detector_view;
 
-    /// Sub-algorithms used by this full-chain algorithm
-    /// Clusterization algorithm
-    clustering_algorithm m_clusterization;
-    /// Measurement sorting algorithm
-    traccc::cuda::measurement_sorting_algorithm m_measurement_sorting;
-    /// Spacepoint formation algorithm
-    spacepoint_formation_algorithm m_spacepoint_formation;
-    /// Seeding algorithm
-    traccc::cuda::seeding_algorithm m_seeding;
     /// Track parameter estimation algorithm
     traccc::cuda::track_params_estimation m_track_parameter_estimation;
 
-    /// Track finding algorithm
-    finding_algorithm m_finding;
     /// Track fitting algorithm
     fitting_algorithm m_fitting;
     
@@ -246,75 +188,20 @@ private:
     traccc::device::container_d2h_copy_alg<traccc::track_state_container_types>
         m_copy_track_states;
 
-    // Helper function to create and setup seedfinder_config
-    static traccc::seedfinder_config create_and_setup_finder_config() {
-        traccc::seedfinder_config cfg;
-        // Set desired values
-        cfg.zMin = -3000.f * traccc::unit<float>::mm;
-        cfg.zMax = 3000.f * traccc::unit<float>::mm;
-        cfg.rMax = 320.f * traccc::unit<float>::mm;
-        cfg.rMin = 33.f * traccc::unit<float>::mm;
-        cfg.collisionRegionMin = -200.f * traccc::unit<float>::mm;
-        cfg.collisionRegionMax = 200.f * traccc::unit<float>::mm;
-        cfg.minPt = 500.f * traccc::unit<float>::MeV; // Used by setup()
-        cfg.cotThetaMax = 27.2899f;
-        cfg.deltaRMin = 20.f * traccc::unit<float>::mm;
-        cfg.deltaRMax = 280.f * traccc::unit<float>::mm;
-        cfg.impactMax = 2.f * traccc::unit<float>::mm;
-        cfg.sigmaScattering = 2.0f;
-        cfg.maxPtScattering = 10.f * traccc::unit<float>::GeV;
-        cfg.maxSeedsPerSpM = 3;
-        // cfg.bFieldInZ uses its default (1.99724f T) unless set here
-        // cfg.radLengthPerSeed uses its default (0.05f) unless set here
-
-        cfg.setup(); // Call setup() again with the new values
-        return cfg;
-    }
-
 public:
-    TracccGpuStandalone(int deviceID = 0) :
+    TracccGpuStandalone(vecmem::host_memory_resource *host_mr,
+                        vecmem::cuda::device_memory_resource *device_mr,
+                        int deviceID = 0) :
         m_device_id(deviceID), 
         logger(traccc::getDefaultLogger("TracccGpuStandalone", traccc::Logging::Level::INFO)),
-        m_host_mr(),
+        m_host_mr(host_mr),
         m_stream(setCudaDeviceAndGetStream(deviceID)),
-        m_device_mr(deviceID),
+        m_device_mr(device_mr),
         m_cached_device_mr(
-            std::make_unique<vecmem::binary_page_memory_resource>(m_device_mr)),
+            std::make_unique<vecmem::binary_page_memory_resource>(*m_device_mr)),
         m_copy(m_stream.cudaStream()),
-        m_mr{*m_cached_device_mr, &m_host_mr},
+        m_mr{*m_cached_device_mr, m_host_mr},
         m_propagation_config(m_propagation_opts),
-        m_clustering_config{256, 16, 8, 256},
-        m_finder_config(create_and_setup_finder_config()), // Initialize m_finder_config using the helper
-        m_grid_config(m_finder_config), 
-        m_filter_config(), 
-        // Initialize m_finding_config with members in declaration order
-        m_finding_config{
-            .max_num_branches_per_seed = 3,                
-            .max_num_branches_per_surface = 5, 
-            .min_track_candidates_per_track = 3,
-            .max_track_candidates_per_track = 20,
-            .max_num_skipping_per_cand = 3,
-            .min_step_length_for_next_surface = 0.5f * detray::unit<float>::mm,
-            .max_step_counts_for_next_surface = 100,
-            .chi2_max = 10.f,
-            .propagation = { 
-                .navigation = { 
-                    .overstep_tolerance = -300.f * traccc::unit<float>::um
-                },
-                .stepping = {
-                    .min_stepsize = 1e-4f * traccc::unit<float>::mm,
-                    .rk_error_tol = 1e-4f * traccc::unit<float>::mm,
-                    .step_constraint = std::numeric_limits<float>::max(),
-                    .path_limit = 5.f * traccc::unit<float>::m,
-                    .max_rk_updates = 10000u,
-                    .use_mean_loss = true,
-                    .use_eloss_gradient = false,
-                    .use_field_gradient = false,
-                    .do_covariance_transport = true
-                }
-            }
-            // .ptc_hypothesis and .initial_links_per_seed will use their defaults
-        }, 
         m_fitting_config{
             .propagation = { 
                 .navigation = {
@@ -325,21 +212,11 @@ public:
                 }
             }
         }, 
-        m_field_vec{0.f, 0.f, m_finder_config.bFieldInZ},
+        m_field_vec{0.f, 0.f, 2.f},
         m_field(detray::bfield::create_const_field<host_detector_type::scalar_type>(m_field_vec)),
-        m_det_descr{m_host_mr},
-        m_clusterization(m_mr, m_copy, m_stream, m_clustering_config),
-        m_measurement_sorting(m_mr, m_copy, m_stream, 
-            logger->cloneWithSuffix("MeasSortingAlg")),
-        m_spacepoint_formation(m_mr, m_copy, m_stream,
-            logger->cloneWithSuffix("SpFormationAlg")),
-        m_seeding(m_finder_config, m_grid_config, m_filter_config, 
-                    m_mr, m_copy, m_stream,
-                    logger->cloneWithSuffix("SeedingAlg")),
+        m_det_descr{*m_host_mr},
         m_track_parameter_estimation(m_mr, m_copy, m_stream,
             logger->cloneWithSuffix("TrackParEstAlg")),
-        m_finding(m_finding_config, m_mr, m_copy, m_stream, 
-            logger->cloneWithSuffix("TrackFindingAlg")),
         m_fitting(m_fitting_config, m_mr, m_copy, m_stream, 
             logger->cloneWithSuffix("TrackFittingAlg")),
         m_copy_track_states(m_mr, m_copy, logger->cloneWithSuffix("TrackStateD2HCopyAlg"))
@@ -360,29 +237,10 @@ public:
 
     void initialize();
 
-    traccc::track_state_container_types::host execute(
-        InputData input_data) 
-    {
-        traccc::edm::spacepoint_collection::host spacepoints_per_event{m_host_mr};
-        traccc::measurement_collection_types::host measurements_per_event{&m_host_mr};
-        
-        inputDataToTracccMeasurements(input_data, spacepoints_per_event, measurements_per_event);
-        auto track_states = fitFromGnnOutput(spacepoints_per_event, measurements_per_event);
-
-        return track_states;
-    }
-
-    void inputDataToTracccMeasurements(
-        InputData input_data,
-        traccc::edm::spacepoint_collection::host& spacepoints_per_event,
-        traccc::measurement_collection_types::host& measurements_per_event);
-
-    void makeGNNInput(InputData, traccc::edm::spacepoint_collection::host& spacepoints_per_event,
-        traccc::measurement_collection_types::host& measurements_per_event);
-    
     traccc::track_state_container_types::host fitFromGnnOutput(
         traccc::edm::spacepoint_collection::host spacepoints_per_event,
-        traccc::measurement_collection_types::host measurements_per_event);
+        traccc::measurement_collection_types::host measurements_per_event,
+        std::vector<int> gnnOutputLabels);
 };
 
 #endif 

@@ -1,4 +1,5 @@
 #include "TracccGpuStandalone.hpp"
+#include "TracccEdmConversion.hpp"
 
 void TracccGpuStandalone::initialize()
 {
@@ -17,18 +18,18 @@ void TracccGpuStandalone::initialize()
     m_device_det_descr = traccc::silicon_detector_description::buffer(
             static_cast<traccc::silicon_detector_description::buffer::size_type>(
                 m_det_descr.size()),
-            m_device_mr);
+            *m_device_mr);
     m_copy.setup(m_device_det_descr)->wait();
     m_copy(m_det_descr_data, m_device_det_descr)->wait();
 
     // Create the detector and read the configuration file
-    m_detector = std::make_unique<host_detector_type>(m_host_mr);
+    m_detector = std::make_unique<host_detector_type>(*m_host_mr);
     traccc::io::read_detector(
-        *m_detector, m_host_mr, m_detector_opts.detector_file,
+        *m_detector, *m_host_mr, m_detector_opts.detector_file,
         m_detector_opts.material_file, m_detector_opts.grid_file);
     
     // copy it to the device - dereference the unique_ptr to get the actual object
-    m_device_detector = detray::get_buffer(*m_detector, m_device_mr, m_copy);
+    m_device_detector = detray::get_buffer(*m_detector, *m_device_mr, m_copy);
     m_stream.synchronize();
     m_device_detector_view = detray::get_data(m_device_detector);
 
@@ -37,7 +38,8 @@ void TracccGpuStandalone::initialize()
 
 traccc::track_state_container_types::host TracccGpuStandalone::fitFromGnnOutput(
     traccc::edm::spacepoint_collection::host spacepoints_per_event,
-    traccc::measurement_collection_types::host measurements_per_event)
+    traccc::measurement_collection_types::host measurements_per_event,
+    std::vector<int> gnnOutputLabels)
 {   
 
     // copy spacepoints and measurements to device
@@ -54,24 +56,18 @@ traccc::track_state_container_types::host TracccGpuStandalone::fitFromGnnOutput(
     // TODO But first: sort by radius to then get the first three!
     // NOTE: this needs to be consistent between measurements and spacepoints
     // Then, pass to the parameter estimation algo
-    auto seeds = m_seeding(spacepoints);
+    traccc::edm::seed_collection::buffer dummySeeds{};
     m_stream.synchronize();
 
     const traccc::cuda::track_params_estimation::output_type track_params =
         m_track_parameter_estimation(measurements, spacepoints,
-            seeds, m_field_vec);
+            dummySeeds, m_field_vec);
     m_stream.synchronize();
-
-    // track finding                        
-    const finding_algorithm::output_type track_candidates = m_finding(
-        m_device_detector_view, m_field, measurements, track_params);
-
-    m_stream.synchronize();
-    std::cout << "Track finding complete" << std::endl;
 
     // Run the track fitting
+    traccc::track_candidate_container_types::const_view *dummyCandidates{};
     const fitting_algorithm::output_type track_states = 
-        m_fitting(m_device_detector_view, m_field, track_candidates);
+        m_fitting(m_device_detector_view, m_field, *dummyCandidates);
 
 
     // copy track states to host
@@ -79,68 +75,33 @@ traccc::track_state_container_types::host TracccGpuStandalone::fitFromGnnOutput(
     return track_states_host;
 }
 
-void TracccGpuStandalone::inputDataToTracccMeasurements(
-    InputData gnnTracks,
-    traccc::edm::spacepoint_collection::host& spacepoints,
-    traccc::measurement_collection_types::host& measurements) 
-{
-    // Create measurements collection
-    measurements = traccc::measurement_collection_types::host(&m_host_mr);
-    measurements.reserve(gnnTracks.cl_x.size());
-
-    // Create spacepoints collection
-    spacepoints = traccc::edm::spacepoint_collection::host(m_host_mr);
-    spacepoints.reserve(gnnTracks.cl_x.size());
-
-    // First create all measurements since we need them for spacepoint linking
-    for (size_t i = 0; i < gnnTracks.cl_x.size(); i++) {
-        traccc::measurement meas;
-        // Set local coordinates (eta, phi)
-        meas.local = {gnnTracks.cl_loc_eta[i], gnnTracks.cl_loc_phi[i]};
-        // Set variance
-        meas.variance = {gnnTracks.cl_cov_00[i], gnnTracks.cl_cov_11[i]};
-        // Set measurement ID (needed for linking)
-        meas.measurement_id = i;
-        // Set measurement dimension
-        meas.meas_dim = 2;
-        // // Set geometry ID
-        // meas.surface_link = 0; // TODO: need some meaningful number
-        
-        measurements.push_back(meas);
-    }
-
-    // Now create spacepoints with measurement links
-    for (size_t i = 0; i < gnnTracks.sp_x.size(); i++) {
-        // Get measurement indices for this spacepoint
-        unsigned int meas_idx1 = gnnTracks.sp_cl1_index.at(i);
-        unsigned int meas_idx2 = gnnTracks.sp_cl2_index[i] >= 0 ? 
-            gnnTracks.sp_cl2_index[i] : 
-            traccc::edm::spacepoint_collection::host::INVALID_MEASUREMENT_INDEX;
-
-        // Create spacepoint using same format as read_spacepoints
-        spacepoints.push_back({
-            meas_idx1,                              // First measurement index
-            meas_idx2,                              // Second measurement index (or INVALID)
-            {gnnTracks.sp_x[i],                     // Global position
-             gnnTracks.sp_y[i], 
-             gnnTracks.sp_z[i]},
-            0.f,                                    // Radius
-            0.f                                     // Phi
-        });
-    }
-
-    // print number of spacepoints / measurements
-    std::cout << "Number of measurements created: " << measurements.size() << std::endl;
-    std::cout << "Number of spacepoints created: " << spacepoints.size() << std::endl;
-}
-
 
 int main(int argc, char *argv[])
 {
+    int deviceId = 0;
+    vecmem::host_memory_resource host_mr;
+    vecmem::cuda::device_memory_resource device_mr(deviceId);
+    
+    TracccGpuStandalone traccc_gpu(&host_mr, &device_mr, deviceId);
+   
+    traccc::edm::spacepoint_collection::host spacepoints(host_mr);
+    traccc::measurement_collection_types::host measurements(&host_mr);
 
-    TracccGpuStandalone traccc_gpu(0);
-    InputData gnnTracks;
-    traccc_gpu.execute(gnnTracks);
+    InputData input_data{};
+    inputDataToTracccMeasurements(input_data, spacepoints, measurements);
 
+    std::vector<int> dummyGNNOutput(input_data.sp_x.size());
+    auto main_particle = input_data.cl_particle_id.at(input_data.sp_cl1_index.at(0));
+    for(auto i = 0ul; i< input_data.sp_x.size(); ++i) {
+      if( input_data.cl_particle_id.at(input_data.sp_cl1_index.at(i)) == main_particle ) {
+        dummyGNNOutput.push_back(0);
+      } else {
+        dummyGNNOutput.push_back(1);
+      }
+    }
+
+    auto tracks = traccc_gpu.fitFromGnnOutput(
+      spacepoints, measurements, dummyGNNOutput
+    );
     return 0;
 }
