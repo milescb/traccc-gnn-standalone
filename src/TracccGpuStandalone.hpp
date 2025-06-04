@@ -28,6 +28,9 @@
 
 #include "traccc/io/read_measurements.hpp"
 #include "traccc/seeding/silicon_pixel_spacepoint_formation_algorithm.hpp"
+#include "traccc/seeding/seeding_algorithm.hpp"
+#include "traccc/seeding/track_params_estimation.hpp"
+
 
 // Detray include(s).
 #include "detray/core/detector.hpp"

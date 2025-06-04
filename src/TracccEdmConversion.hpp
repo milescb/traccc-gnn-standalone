@@ -86,8 +86,8 @@ inline void inputDataToTracccMeasurements(
             {gnnTracks.sp_x[i],                     // Global position
              gnnTracks.sp_y[i], 
              gnnTracks.sp_z[i]},
-            0.f,                                    // Radius
-            0.f                                     // Phi
+            0.f,                                    // Variance in z
+            0.f                                     // Variance in radius
         });
     }
 
