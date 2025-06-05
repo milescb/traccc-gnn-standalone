@@ -3,10 +3,10 @@
 
 void TracccGpuStandalone::initialize()
 {
-    // HACK: hard code location of detector and digitization file
-    m_detector_opts.detector_file = "/global/cfs/projectdirs/m3443/data/GNN4ITK-traccc/ITk_data/ATLAS-P2-RUN4-03-00-00/ITk_DetectorBuilder_geometry.json";
-    m_detector_opts.digitization_file = "/global/cfs/projectdirs/m3443/data/GNN4ITK-traccc/ITk_data/ATLAS-P2-RUN4-03-00-00/ITk_digitization_config_with_strips.json";
-    m_detector_opts.grid_file = "/global/cfs/projectdirs/m3443/data/GNN4ITK-traccc/ITk_data/ATLAS-P2-RUN4-03-00-00/ITk_DetectorBuilder_surface_grids.json";
+    // Set geometry files
+    m_detector_opts.detector_file = m_geoDir + "ITk_DetectorBuilder_geometry.json";
+    m_detector_opts.digitization_file = m_geoDir + "ITk_digitization_config_with_strips.json";
+    m_detector_opts.grid_file = m_geoDir + "ITk_DetectorBuilder_surface_grids.json";
     m_detector_opts.material_file = "";
 
     // Read the detector description
@@ -176,8 +176,17 @@ int main(int argc, char *argv[])
     int deviceId = 0;
     vecmem::host_memory_resource host_mr;
     vecmem::cuda::device_memory_resource device_mr(deviceId);
+
+    // Optional: Parse command line argument for geometry directory
+    std::string geoDir = "/global/cfs/projectdirs/m3443/data/GNN4ITK-traccc/ITk_data/ATLAS-P2-RUN4-03-00-00/";
+    if (argc > 1) {
+        geoDir = std::string(argv[1]);
+        if (geoDir.back() != '/') {
+            geoDir += "/"; // Ensure trailing slash
+        }
+    }
     
-    TracccGpuStandalone traccc_gpu(&host_mr, &device_mr, deviceId);
+    TracccGpuStandalone traccc_gpu(&host_mr, &device_mr, deviceId, geoDir);
    
     traccc::edm::spacepoint_collection::host spacepoints(host_mr);
     traccc::measurement_collection_types::host measurements(&host_mr);

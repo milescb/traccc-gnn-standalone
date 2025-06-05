@@ -130,6 +130,8 @@ class TracccGpuStandalone
 private:
     /// Device ID to use
     int m_device_id;
+    /// Geometry directory path
+    std::string m_geoDir;
 
     /// Logger 
     std::unique_ptr<const traccc::Logger> logger;
@@ -197,8 +199,10 @@ private:
 public:
     TracccGpuStandalone(vecmem::host_memory_resource *host_mr,
                         vecmem::cuda::device_memory_resource *device_mr,
-                        int deviceID = 0) :
+                        int deviceID = 0,
+                        const std::string& geoDir = "/global/cfs/projectdirs/m3443/data/GNN4ITK-traccc/ITk_data/ATLAS-P2-RUN4-03-00-00/") :
         m_device_id(deviceID), 
+        m_geoDir(geoDir),
         logger(traccc::getDefaultLogger("TracccGpuStandalone", traccc::Logging::Level::INFO)),
         m_host_mr(host_mr),
         m_stream(setCudaDeviceAndGetStream(deviceID)),

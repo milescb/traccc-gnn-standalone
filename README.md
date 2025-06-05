@@ -8,9 +8,19 @@ export INSTALLDIR=/global/cfs/projectdirs/m3443/data/traccc-aaS/software/dev/ins
 export PATH=$INSTALLDIR/bin:$PATH
 ```
 
-Then build like normal. 
+Then build like normal:
+
+```bash
+mkdir build && cd build
+cmake ../
+make
+```
+
+The code can be run with the built executabe `./TracccGpuStandalone`. 
 
 ## Build traccc
+
+If not at `nesrc`, configure `traccc` with the following command:
 
 ```
 cmake -S traccc/ -B $BUILDDIR \
@@ -21,4 +31,8 @@ cmake -S traccc/ -B $BUILDDIR \
     -DCMAKE_INSTALL_PREFIX=$INSTALLDIR
 ```
 
-Then build and install. Finally, source `$INSTALLDIR` and add to `$PATH`. 
+Then build and install. Finally, source `$INSTALLDIR` and add to `$PATH` as above. 
+
+## Getting ITk geometry files
+
+To access the ITk geometry files, you must have a cern account and be able to access the `eos` area. First, sign up for the `atlas-tdaq-phase2-EFTracking-developers` e-group; then, the geometry files can be found at ` /eos/project/a/atlas-eftracking/GPU/ITk_data/ATLAS-P2-RUN4-03-00-00/`.
