@@ -24,6 +24,7 @@
 #include "traccc/fitting/kalman_filter/kalman_fitter.hpp"
 #include "traccc/utils/algorithm.hpp"
 #include "traccc/device/container_d2h_copy_alg.hpp"
+#include "traccc/device/container_h2d_copy_alg.hpp"
 #include "traccc/ambiguity_resolution/greedy_ambiguity_resolution_algorithm.hpp"
 
 #include "traccc/io/read_measurements.hpp"
@@ -187,9 +188,11 @@ private:
     /// Track fitting algorithm
     fitting_algorithm m_fitting;
     
-    // copy back!
+    // copy back and forth!
     traccc::device::container_d2h_copy_alg<traccc::track_state_container_types>
         m_copy_track_states;
+    traccc::device::container_h2d_copy_alg<traccc::track_candidate_container_types>
+        m_copy_track_candidates;
 
 public:
     TracccGpuStandalone(vecmem::host_memory_resource *host_mr,
@@ -222,7 +225,8 @@ public:
             logger->cloneWithSuffix("TrackParEstAlg")),
         m_fitting(m_fitting_config, m_mr, m_copy, m_stream, 
             logger->cloneWithSuffix("TrackFittingAlg")),
-        m_copy_track_states(m_mr, m_copy, logger->cloneWithSuffix("TrackStateD2HCopyAlg"))
+        m_copy_track_states(m_mr, m_copy, logger->cloneWithSuffix("TrackStateD2HCopyAlg")),
+        m_copy_track_candidates(m_mr, m_copy, logger->cloneWithSuffix("TrackCandidateH2DCopyAlg"))
     {
         // Tell the user what device is being used.
         int device = 0;

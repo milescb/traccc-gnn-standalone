@@ -58,9 +58,9 @@ traccc::track_state_container_types::host TracccGpuStandalone::fitFromGnnOutput(
     sorted_gnnOutputLabels.reserve(gnnOutputLabels.size());
 
     for (size_t new_idx = 0; new_idx < original_indices.size(); ++new_idx) {
-        size_t old_idx = original_indices[new_idx];
-        sorted_spacepoints.push_back(spacepoints_per_event[old_idx]);
-        sorted_gnnOutputLabels.push_back(gnnOutputLabels[old_idx]);
+        size_t old_idx = original_indices.at(new_idx);
+        sorted_spacepoints.push_back(spacepoints_per_event.at(old_idx));
+        sorted_gnnOutputLabels.push_back(gnnOutputLabels.at(old_idx));
     }
 
     // TODO: later, may need to deal with measurement ordering
@@ -77,7 +77,7 @@ traccc::track_state_container_types::host TracccGpuStandalone::fitFromGnnOutput(
     std::cout << "Number of spacepoints per particle: " << std::endl;
     for (size_t i = 0; i < spacepoints_per_particle.size(); ++i)
     {
-        std::cout << "Particle " << i << ": " << spacepoints_per_particle.at(i).size() << " spacepoints" << std::endl;
+        std::cout << "  Particle " << i << ": " << spacepoints_per_particle.at(i).size() << " spacepoints" << std::endl;
     }
 
     // Seeds are the first three spacepoints
@@ -114,20 +114,59 @@ traccc::track_state_container_types::host TracccGpuStandalone::fitFromGnnOutput(
     const traccc::cuda::track_params_estimation::output_type track_params =
         m_track_parameter_estimation(measurements, spacepoints,
             seeds_device, m_field_vec);
+
+    m_stream.synchronize();
     
     // print number of track params
-    std::cout << "Number of track parameters: " << track_params.size() << std::endl;
-    
-    m_stream.synchronize();
+    size_t nTrackParams = track_params.size();
+    std::cout << "Number of track parameters: " << nTrackParams << std::endl;
+
+    // copy track params to host
+    traccc::host::track_params_estimation::output_type track_params_host(
+        static_cast<unsigned int>(nTrackParams), m_host_mr);
+    m_copy(vecmem::get_data(track_params), vecmem::get_data(track_params_host))->wait();
+
+    // Create and populate track_candidates container directly
+    traccc::track_candidate_container_types::host track_candidates_host(m_host_mr);
+
+    // track candidates is composed of container_types<finding_result, track_candidate>
+    // where finding_results is a struct with seed_params and trk_quality
+    // and track_candidate is just the measurements corresponding to the measurements
+    for (size_t i = 0; i < nTrackParams; ++i) {
+        // Create finding_result
+        traccc::finding_result finding_result;
+        finding_result.seed_params = track_params_host.at(i);
+        finding_result.trk_quality = traccc::track_quality{}; // Default initialize
+        
+        // Create measurements vector for this track
+        traccc::track_candidate_collection_types::host measurements_for_track(m_host_mr);
+        
+        // Add measurements for this track
+        const auto& current_seed = seeds[i];
+        // Map sorted indices back to original indices to obtain proper measurements
+        size_t original_bottom_idx = original_indices.at(current_seed.bottom_index());
+        size_t original_middle_idx = original_indices.at(current_seed.middle_index());
+        size_t original_top_idx = original_indices.at(current_seed.top_index());
+
+        measurements_for_track.push_back(measurements_per_event.at(original_bottom_idx));
+        measurements_for_track.push_back(measurements_per_event.at(original_middle_idx));
+        measurements_for_track.push_back(measurements_per_event.at(original_top_idx));
+        
+        track_candidates_host.push_back(finding_result, measurements_for_track);
+    }
+
+    // Copy to device
+    traccc::track_candidate_container_types::buffer track_candidates = m_copy_track_candidates(
+        traccc::get_data(track_candidates_host));
 
     // Run the track fitting
-    traccc::track_candidate_container_types::const_view *dummyCandidates{};
     const fitting_algorithm::output_type track_states = 
-        m_fitting(m_device_detector_view, m_field, *dummyCandidates);
-
+        m_fitting(m_device_detector_view, m_field, track_candidates);
 
     // copy track states to host
     traccc::track_state_container_types::host track_states_host = m_copy_track_states(track_states);
+    std::cout << "Number of fitted tracks: " << track_states_host.size() << std::endl;
+
     return track_states_host;
 }
 
@@ -145,8 +184,6 @@ int main(int argc, char *argv[])
 
     InputData input_data{};
     inputDataToTracccMeasurements(input_data, spacepoints, measurements);
-
-    std::cout << input_data.sp_x.size() << " spacepoints " << std::endl;
 
     std::vector<int> dummyGNNOutput(input_data.sp_x.size());
     auto main_particle = input_data.cl_particle_id.at(input_data.sp_cl1_index.at(0));
