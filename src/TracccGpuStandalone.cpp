@@ -90,6 +90,7 @@ traccc::track_state_container_types::host TracccGpuStandalone::fitFromGnnOutput(
     // MARK: Create seeds as first three spacepoint indices
     //? Could this be device friendly?
     traccc::edm::seed_collection::host seeds(*m_host_mr);
+    std::vector<std::vector<size_t>> seed_indices;
     for (auto &particle : spacepoints_per_particle) {
         // need at least three spacepoints to form a seed
         if (particle.size() < 3) {
@@ -103,6 +104,9 @@ traccc::track_state_container_types::host TracccGpuStandalone::fitFromGnnOutput(
             static_cast<unsigned int>(particle.at(2))  // top_index
         );
         seeds.push_back(new_seed_object);
+
+        // save the indices of all spacepoints for later use
+        seed_indices.push_back(particle);
     }
 
     // copy spacepoints, measurements, seeds to device
@@ -145,24 +149,26 @@ traccc::track_state_container_types::host TracccGpuStandalone::fitFromGnnOutput(
         traccc::finding_result finding_result;
         finding_result.seed_params = track_params_host.at(i);
         finding_result.trk_quality = traccc::track_quality{}; // Default initialize
-        
+
         // Create measurements vector for this track
         traccc::track_candidate_collection_types::host measurements_for_track(m_host_mr);
-        
-        // Add measurements for this track
-        const auto& current_seed = seeds[i];
-        // Map sorted indices back to original indices to obtain proper measurements
-        size_t original_bottom_idx = original_indices.at(current_seed.bottom_index());
-        size_t original_middle_idx = original_indices.at(current_seed.middle_index());
-        size_t original_top_idx = original_indices.at(current_seed.top_index());
 
-        measurements_for_track.push_back(measurements_per_event.at(original_bottom_idx));
-        measurements_for_track.push_back(measurements_per_event.at(original_middle_idx));
-        measurements_for_track.push_back(measurements_per_event.at(original_top_idx));
+        // push back all measurements for the selected track
+        for (const auto& sp_idx : seed_indices[i]) {
+
+            const auto& spacepoint = spacepoints_per_event.at(sp_idx);
+            
+            // Add the first measurement
+            measurements_for_track.push_back(measurements_per_event.at(spacepoint.measurement_index_1()));
+            // Add the second measurement if it exists
+            if (spacepoint.measurement_index_2() != traccc::edm::spacepoint_collection::host::INVALID_MEASUREMENT_INDEX) {
+                measurements_for_track.push_back(measurements_per_event.at(spacepoint.measurement_index_2()));
+            }
+        }
         
         track_candidates_host.push_back(finding_result, measurements_for_track);
     }
-
+    
     //! Copy to device
     traccc::track_candidate_container_types::buffer track_candidates = m_copy_track_candidates(
         traccc::get_data(track_candidates_host));

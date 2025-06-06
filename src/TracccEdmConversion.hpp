@@ -105,7 +105,7 @@ inline void inputDataToTracccMeasurements(
         // Set measurement ID (needed for linking)
         meas.measurement_id = i;
         // Set measurement dimension
-        meas.meas_dim = 2;
+        meas.meas_dim = gnnTracks.sp_cl2_index[i] >= 0 ? 2 : 1;
         // Set geometry ID
         // Output from GNN is Athena ID, first need to convert to ACTS ID
         auto it_athena_to_acts = athena_to_acts_map.find(gnnTracks.cl_module_id[i]);
