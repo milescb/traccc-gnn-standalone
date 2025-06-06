@@ -154,6 +154,8 @@ private:
     std::unique_ptr<traccc::digitization_config> m_digi_cfg;
     /// barcode map
     std::unique_ptr<std::map<std::uint64_t, detray::geometry::barcode>> m_barcode_map;
+    /// Athena to acts map
+    std::map<uint64_t, uint64_t> m_athena_to_acts_map;
 
     // program configuration 
     /// detector options
@@ -247,6 +249,15 @@ public:
     ~TracccGpuStandalone() = default;
 
     void initialize();
+
+    // dereference to map object and make available publicly
+    const std::map<std::uint64_t, detray::geometry::barcode>& getActsToBarcodeMap() const {
+        return *m_barcode_map;
+    }
+
+    const std::map<uint64_t, uint64_t>& getAthenaToActsMap() const {
+        return m_athena_to_acts_map;
+    }
 
     traccc::track_state_container_types::host fitFromGnnOutput(
         traccc::edm::spacepoint_collection::host spacepoints_per_event,

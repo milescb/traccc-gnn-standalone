@@ -7,7 +7,17 @@ void TracccGpuStandalone::initialize()
     m_detector_opts.detector_file = m_geoDir + "ITk_DetectorBuilder_geometry.json";
     m_detector_opts.digitization_file = m_geoDir + "ITk_digitization_config_with_strips.json";
     m_detector_opts.grid_file = m_geoDir + "ITk_DetectorBuilder_surface_grids.json";
-    m_detector_opts.material_file = "";
+    m_detector_opts.material_file = ""; 
+
+    // read geometry and create source to barcode map for use in the edm
+    auto geometry_pair = traccc::io::read_geometry(
+        m_detector_opts.detector_file, traccc::data_format::json);
+    m_surface_transforms = std::move(geometry_pair.first);
+    m_barcode_map = std::move(geometry_pair.second);  
+
+    // Load Athena-to-ACTS mapping
+    std::string athenaTransformsPath = m_geoDir + "athena_transforms.csv";
+    m_athena_to_acts_map = read_athena_to_acts_mapping(athenaTransformsPath);
 
     // Read the detector description
     traccc::io::read_detector_description(
@@ -41,8 +51,7 @@ traccc::track_state_container_types::host TracccGpuStandalone::fitFromGnnOutput(
     traccc::measurement_collection_types::host measurements_per_event,
     std::vector<int> gnnOutputLabels)
 {   
-    // MARK: sort by radius
-
+    // MARK: Sort spacepoints and gnnOutputLabels by radius
     std::vector<size_t> original_indices(spacepoints_per_event.size());
     std::iota(original_indices.begin(), original_indices.end(), 0);
 
@@ -63,8 +72,6 @@ traccc::track_state_container_types::host TracccGpuStandalone::fitFromGnnOutput(
         sorted_gnnOutputLabels.push_back(gnnOutputLabels.at(old_idx));
     }
 
-    // TODO: later, may need to deal with measurement ordering
-
     // MARK: unwind the GNN output labels to get the main particle and secondary particles
     auto nCandidates = *std::max_element(sorted_gnnOutputLabels.begin(), sorted_gnnOutputLabels.end());
     std::vector<std::vector<size_t>> spacepoints_per_particle(nCandidates+1);
@@ -80,7 +87,8 @@ traccc::track_state_container_types::host TracccGpuStandalone::fitFromGnnOutput(
         std::cout << "  Particle " << i << ": " << spacepoints_per_particle.at(i).size() << " spacepoints" << std::endl;
     }
 
-    // Seeds are the first three spacepoints
+    // MARK: Create seeds as first three spacepoint indices
+    //? Could this be device friendly?
     traccc::edm::seed_collection::host seeds(*m_host_mr);
     for (auto &particle : spacepoints_per_particle) {
         // need at least three spacepoints to form a seed
@@ -110,7 +118,7 @@ traccc::track_state_container_types::host TracccGpuStandalone::fitFromGnnOutput(
         static_cast<unsigned int>(seeds.size()), *m_cached_device_mr);
     m_copy(vecmem::get_data(seeds), seeds_device)->wait();
 
-    // run parameter estimation
+    // run parameter estimation (on device)
     const traccc::cuda::track_params_estimation::output_type track_params =
         m_track_parameter_estimation(measurements, spacepoints,
             seeds_device, m_field_vec);
@@ -121,7 +129,7 @@ traccc::track_state_container_types::host TracccGpuStandalone::fitFromGnnOutput(
     size_t nTrackParams = track_params.size();
     std::cout << "Number of track parameters: " << nTrackParams << std::endl;
 
-    // copy track params to host
+    //! copy track params to host
     traccc::host::track_params_estimation::output_type track_params_host(
         static_cast<unsigned int>(nTrackParams), m_host_mr);
     m_copy(vecmem::get_data(track_params), vecmem::get_data(track_params_host))->wait();
@@ -129,7 +137,7 @@ traccc::track_state_container_types::host TracccGpuStandalone::fitFromGnnOutput(
     // Create and populate track_candidates container directly
     traccc::track_candidate_container_types::host track_candidates_host(m_host_mr);
 
-    // track candidates is composed of container_types<finding_result, track_candidate>
+    // track candidates are composed of container_types<finding_result, track_candidate>
     // where finding_results is a struct with seed_params and trk_quality
     // and track_candidate is just the measurements corresponding to the measurements
     for (size_t i = 0; i < nTrackParams; ++i) {
@@ -155,7 +163,7 @@ traccc::track_state_container_types::host TracccGpuStandalone::fitFromGnnOutput(
         track_candidates_host.push_back(finding_result, measurements_for_track);
     }
 
-    // Copy to device
+    //! Copy to device
     traccc::track_candidate_container_types::buffer track_candidates = m_copy_track_candidates(
         traccc::get_data(track_candidates_host));
 
@@ -182,7 +190,7 @@ int main(int argc, char *argv[])
     if (argc > 1) {
         geoDir = std::string(argv[1]);
         if (geoDir.back() != '/') {
-            geoDir += "/"; // Ensure trailing slash
+            geoDir += "/";
         }
     }
     
@@ -192,7 +200,10 @@ int main(int argc, char *argv[])
     traccc::measurement_collection_types::host measurements(&host_mr);
 
     InputData input_data{};
-    inputDataToTracccMeasurements(input_data, spacepoints, measurements);
+    std::string athenaTransformsPath = geoDir + "athena_transforms.csv"; 
+    inputDataToTracccMeasurements(
+        input_data, spacepoints, measurements,
+        traccc_gpu.getActsToBarcodeMap(), traccc_gpu.getAthenaToActsMap());
 
     std::vector<int> dummyGNNOutput(input_data.sp_x.size());
     auto main_particle = input_data.cl_particle_id.at(input_data.sp_cl1_index.at(0));
@@ -222,7 +233,7 @@ int main(int argc, char *argv[])
     std::cout << "Length of dummy GNN output: " << dummyGNNOutput.size() << std::endl;
 
     auto tracks = traccc_gpu.fitFromGnnOutput(
-      spacepoints, measurements, dummyGNNOutput
-    );
+      spacepoints, measurements, dummyGNNOutput);
+    
     return 0;
 }
