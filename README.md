@@ -35,4 +35,10 @@ Then build and install. Finally, source `$INSTALLDIR` and add to `$PATH` as abov
 
 ## Getting ITk geometry files
 
-To access the ITk geometry files, you must have a cern account and be able to access the `eos` area. First, sign up for the `atlas-tdaq-phase2-EFTracking-developers` e-group; then, the geometry files can be found at `/eos/project/a/atlas-eftracking/GPU/ITk_data/ATLAS-P2-RUN4-03-00-00/`. If not running on `lxplus`, download this directory somewhere convenient, then run the executable by pointing it to the directory you downloaded the files to: `./TracccGpuStandalone <path_to_dir>`, of if on `lxplus`, run with `./TracccGpuStandalone /eos/project/a/atlas-eftracking/GPU/ITk_data/ATLAS-P2-RUN4-03-00-00/`. 
+To access the ITk geometry files, you must have a cern account and be able to access the `eos` area. First, sign up for the `atlas-tdaq-phase2-EFTracking-developers` e-group; then, the geometry files can be found at `/eos/project/a/atlas-eftracking/GPU/ITk_data/ATLAS-P2-RUN4-03-00-00/`. You will also need the `athena_transforms.csv` file. To get this, download from the following public cernbox link with
+
+```
+curl -O https://cernbox.cern.ch/remote.php/dav/public-files/VfzC3bZwOHz3hFR/athena_transforms.csv
+```
+
+Finally, to run this code, download the above directory somewhere convenient, copy the `athena_transforms.csv` file to this directory, and run the executable by pointing it to the directory you downloaded the files to: `./TracccGpuStandalone <path_to_dir>`. 
